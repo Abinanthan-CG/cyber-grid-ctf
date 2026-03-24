@@ -1,0 +1,845 @@
+import { initializeApp }                       from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
+import { getDatabase, ref, set, get, update,
+         onValue, push, serverTimestamp }      from "https://www.gstatic.com/firebasejs/12.10.0/firebase-database.js";
+
+// ── FIREBASE ──
+const firebaseConfig = {
+  apiKey:            "AIzaSyDKKMNXFrwtEzAw7vGfPUPCTfI3LkPWXLs",
+  authDomain:        "cyber-grid-ctf.firebaseapp.com",
+  databaseURL:       "https://cyber-grid-ctf-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId:         "cyber-grid-ctf",
+  storageBucket:     "cyber-grid-ctf.firebasestorage.app",
+  messagingSenderId: "579249626650",
+  appId:             "1:579249626650:web:4d8bc462623fa12582bba3"
+};
+const app = initializeApp(firebaseConfig);
+const db  = getDatabase(app);
+
+// ── ROUND DEFINITIONS (never stored in Firebase, always local) ──
+const ROUNDS = [
+  { id:'r1', num:1, title:'GEOLOCATION',    tag:'OSINT',     tc:'tt-osint',    pts:100,
+    flag:'flag{chennai_marina_beach}',
+    hint:'Focus on the language on signboards and look for the distinctive lighthouse in the background.',
+    desc:'A photograph was taken somewhere in South India. Identify the exact location using visual clues — signboards, architecture, vegetation, and landmarks.' },
+
+  { id:'r2', num:2, title:'STEGANOGRAPHY',  tag:'STEGO',     tc:'tt-stego',    pts:100,
+    flag:'flag{h1dd3n_m3ss4g3}',
+    hint:'Try LSB steganography tools. The hidden payload is in the red channel. Password: cybergrid',
+    desc:'A seemingly ordinary PNG image has been provided. Something is hidden inside. Use steganography tools to extract the concealed payload.' },
+
+  { id:'r3', num:3, title:'METADATA HUNT',  tag:'FORENSICS', tc:'tt-forensics', pts:100,
+    flag:'flag{exif_gps_13.0827_80.2707}',
+    hint:'Use exiftool or an online EXIF viewer. Check the GPS coordinates in the metadata.',
+    desc:'This image file carries more than just pixels. Extract coordinates from its embedded metadata to find the flag.' },
+
+  { id:'r4', num:4, title:'CIPHER DECODE',  tag:'CRYPTO',    tc:'tt-crypto',   pts:100,
+    flag:'flag{caesar_cipher_solved}',
+    hint:'The string is Base64 encoded. Try CyberChef with the "From Base64" recipe.',
+    desc:'An encoded string was intercepted: <code style="font-family:var(--mono);color:#79c0ff;font-size:12px">ZmxhZ3tjYWVzYXJfY2lwaGVyX3NvbHZlZH0=</code> — decode it to reveal the flag.' },
+
+  { id:'r5', num:5, title:'WEB RECON',      tag:'WEB',       tc:'tt-web',      pts:100,
+    flag:'flag{r0b0ts_txt_s3cr3t}',
+    hint:'Try visiting /robots.txt on the target URL. Admins often hide sensitive paths there.',
+    desc:'A target website has been deployed with a secret flag hidden somewhere. Inspect the source code, check special paths, and look through the response headers.' },
+
+  { id:'r6', num:6, title:'BINARY STRINGS', tag:'REVERSING', tc:'tt-rev',      pts:100,
+    flag:'flag{str1ngs_t00l_m4st3r}',
+    hint:'Run: strings file.bin | grep flag — the flag is embedded as plain ASCII inside the binary.',
+    desc:'A binary executable file has been provided. You do not need to run it — find the flag embedded as plain text somewhere inside the file.' },
+];
+
+const ADMIN_PASS  = 'dlss2026slop';
+const TOTAL_PTS   = ROUNDS.reduce((a,r) => a+r.pts, 0);
+
+// ── SESSION ──
+let ME            = null;   // { teamId, memberName, isLeader }
+let IS_ADMIN      = false;
+let UNSUBS        = [];
+let BANNER_TIMER  = null;
+let TERM_HIST     = [], TERM_HIST_IDX = -1;
+
+// ── DOM ──
+const g   = id => document.getElementById(id);
+const qs  = s  => document.querySelector(s);
+const qsa = s  => document.querySelectorAll(s);
+
+function show(id) {
+  qsa('.scr').forEach(s => s.classList.remove('on'));
+  g(id)?.classList.add('on');
+}
+
+function stab(name, btn) {
+  qsa('.tab').forEach(b => b.classList.remove('on')); btn.classList.add('on');
+  qsa('.pane').forEach(p => p.classList.remove('on')); g('pane-'+name)?.classList.add('on');
+}
+window.stab = stab;
+
+function spg(pid, btn, sid) {
+  const scr = g(sid); if (!scr) return;
+  scr.querySelectorAll('.page').forEach(p => p.classList.remove('on')); g(pid)?.classList.add('on');
+  scr.querySelectorAll('.nav-item').forEach(b => b.classList.remove('on')); btn.classList.add('on');
+  if (pid==='p-lb')  renderLB();
+  if (pid==='a-lb')  renderAdminLB();
+  if (pid==='a-tm')  renderTeams();
+  if (pid==='a-rd')  renderAdminRounds();
+  if (pid==='a-ov')  renderStats();
+}
+window.spg = spg;
+
+function toast(msg, type='info') {
+  const box = g('toasts'); if (!box) return;
+  const t = document.createElement('div');
+  t.className = `toast ${type}`; t.textContent = msg;
+  box.appendChild(t);
+  setTimeout(() => { t.classList.add('bye'); setTimeout(() => t.remove(), 250); }, 3200);
+}
+
+function fmsg(id, text, type='e') {
+  const e = g(id); if (!e) return;
+  e.className = `fmsg ${type} on`; e.textContent = text;
+}
+
+function clearMsg(...ids) { ids.forEach(id => { const e=g(id); if(e){e.className='fmsg';e.textContent='';} }); }
+
+function ripple(btn, ev) {
+  const r = document.createElement('span');
+  const rect = btn.getBoundingClientRect(), sz = Math.max(rect.width, rect.height);
+  r.className = 'rpl';
+  r.style.cssText = `width:${sz}px;height:${sz}px;left:${ev.clientX-rect.left-sz/2}px;top:${ev.clientY-rect.top-sz/2}px`;
+  btn.appendChild(r); setTimeout(() => r.remove(), 600);
+}
+window.ripple = ripple;
+
+function popScore() {
+  const e = g('p-score'); if (!e) return;
+  e.classList.remove('pop'); void e.offsetWidth; e.classList.add('pop');
+}
+
+function showBanner(text, type='ok') {
+  const b = g('mbanner'); if (!b) return;
+  b.style.cssText = type==='ok'
+    ? 'background:rgba(0,230,118,0.12);color:var(--green);border-color:rgba(0,230,118,0.4)'
+    : 'background:rgba(255,23,68,0.12);color:var(--red);border-color:rgba(255,23,68,0.4)';
+  b.textContent = text; b.style.display = 'block';
+  b.style.animation = 'none'; void b.offsetWidth;
+  b.style.animation = 'bannerDrop 0.35s var(--spring)';
+  clearTimeout(BANNER_TIMER);
+  BANNER_TIMER = setTimeout(() => b.style.display='none', 3000);
+}
+
+function setRole(isLeader) {
+  const tag = g('p-role'), btn = g('xfer-btn'); if (!tag||!btn) return;
+  tag.textContent = isLeader ? 'LEADER' : 'MEMBER';
+  tag.className   = isLeader ? 'score-tag role-leader' : 'score-tag role-member';
+  btn.style.display = isLeader ? '' : 'none';
+}
+
+function setLoading(id, on, offText) {
+  const b = g(id); if (!b) return;
+  b.disabled = on; b.textContent = on ? 'PLEASE WAIT...' : offText;
+  b.style.opacity = on ? '0.6' : '1';
+}
+
+// ── CODE HELPERS ──
+let _curCode = '';
+function copyCode() {
+  navigator.clipboard?.writeText(_curCode).catch(()=>{});
+  const b = g('copy-btn');
+  if (b) { b.textContent='COPIED ✓'; setTimeout(()=>b.textContent='COPY CODE',2000); }
+}
+window.copyCode = copyCode;
+
+window.show = show;
+
+function genCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return 'CG-' + Array.from({length:4}, ()=>chars[Math.floor(Math.random()*chars.length)]).join('');
+}
+
+// ── SEED ROUNDS ──
+async function seedRounds() {
+  const snap = await get(ref(db,'rounds'));
+  if (!snap.exists()) {
+    const data = {};
+    ROUNDS.forEach(r => { data[r.id] = { unlocked:false, solveCount:0 }; });
+    await set(ref(db,'rounds'), data);
+  }
+}
+
+// ═══════════════════════════════════════════
+//  AUTH
+// ═══════════════════════════════════════════
+
+async function doJoin() {
+  const code = (g('j-code')?.value||'').trim().toUpperCase();
+  const name = (g('j-name')?.value||'').trim();
+  clearMsg('j-msg');
+  if (!code||!name) { fmsg('j-msg','Both fields are required.'); return; }
+
+  setLoading('join-btn', true, 'JOIN TEAM →');
+
+  try {
+    const snap = await get(ref(db,'teams'));
+    if (!snap.exists()) { fmsg('j-msg','Invalid team code.'); return; }
+
+    let team = null, teamId = null;
+    snap.forEach(c => { if (c.val().code===code) { team=c.val(); teamId=c.key; } });
+
+    if (!team)                    { fmsg('j-msg','Invalid team code. Check with your team leader.'); return; }
+    if (team.status==='pending')  { show('pending'); return; }
+    if (team.status==='rejected') { fmsg('j-msg','Your team registration was rejected.'); return; }
+
+    // Member management
+    const members     = team.members || {};
+    const memberNames = Object.values(members).map(m => m.toLowerCase());
+    const already     = memberNames.includes(name.toLowerCase());
+
+    if (!already && Object.keys(members).length >= 3) { fmsg('j-msg','Team is full. Max 3 members.'); return; }
+    if (!already) {
+      const mRef = push(ref(db,`teams/${teamId}/members`));
+      await set(mRef, name);
+    }
+
+    const isLeader = name.toLowerCase() === team.leaderName.toLowerCase();
+    ME = { teamId, memberName:name, isLeader };
+
+    g('p-tname').textContent = team.name;
+    g('p-score').textContent = (team.pts||0)+' PTS';
+    setRole(isLeader);
+
+    subscribeTeam(teamId);
+    subscribeRounds();
+    show('part');
+    termReveal();
+    saveSession();
+    toast(`Joined as ${isLeader?'LEADER':'MEMBER'} — ${team.name}`, isLeader?'warn':'info');
+
+  } catch(err) {
+    console.error(err);
+    fmsg('j-msg','Connection error. Check your internet and try again.');
+  } finally {
+    setLoading('join-btn', false, 'JOIN TEAM →');
+  }
+}
+window.doJoin = doJoin;
+
+async function doReg() {
+  const name  = (g('r-name')?.value||'').trim();
+  const lname = (g('r-lname')?.value||'').trim();
+  const email = (g('r-email')?.value||'').trim();
+  clearMsg('r-msg');
+  if (!name||!lname||!email) { fmsg('r-msg','All fields are required.'); return; }
+
+  setLoading('reg-btn', true, 'REGISTER TEAM →');
+
+  try {
+    // Check name uniqueness
+    const snap = await get(ref(db,'teams'));
+    if (snap.exists()) {
+      let taken = false;
+      snap.forEach(c => { if (c.val().name.toLowerCase()===name.toLowerCase()) taken=true; });
+      if (taken) { fmsg('r-msg','Team name already taken. Choose another.'); return; }
+    }
+
+    // Unique code
+    let code = genCode();
+    if (snap.exists()) {
+      const codes = Object.values(snap.val()).map(t=>t.code);
+      while (codes.includes(code)) code = genCode();
+    }
+
+    // Write to Firebase
+    await set(push(ref(db,'teams')), {
+      name, leaderName:lname, email, code,
+      status:'pending', pts:0,
+      solved:{}, members:{}, hints_used:{}, wrongs:{},
+      createdAt: serverTimestamp()
+    });
+
+    _curCode = code;
+    g('code-val').textContent = code;
+    g('copy-btn').textContent = 'COPY CODE';
+    show('code-scr');
+
+  } catch(err) {
+    console.error(err);
+    fmsg('r-msg','Connection error. Try again.');
+  } finally {
+    setLoading('reg-btn', false, 'REGISTER TEAM →');
+  }
+}
+window.doReg = doReg;
+
+function doAdm() {
+  clearMsg('a-msg');
+  if ((g('a-pass')?.value||'') !== ADMIN_PASS) { fmsg('a-msg','Wrong password.'); return; }
+  IS_ADMIN = true; ME = null;
+  subscribeAllTeams();
+  subscribeRounds();
+  renderStats();
+  show('adm');
+  termReveal();
+  saveSession();
+  toast('Admin access granted.','warn');
+}
+window.doAdm = doAdm;
+
+function doOut() {
+  ME = null; IS_ADMIN = false;
+  UNSUBS.forEach(u=>u()); UNSUBS=[];
+  localStorage.removeItem('cg_session');
+  show('auth');
+}
+window.doOut = doOut;
+
+// ═══════════════════════════════════════════
+//  REALTIME SUBSCRIPTIONS
+// ═══════════════════════════════════════════
+
+function subscribeTeam(teamId) {
+  const u = onValue(ref(db,`teams/${teamId}`), snap => {
+    if (!snap.exists()||!ME) return;
+    const team = snap.val();
+    const ps = g('p-score'); if (ps) { ps.textContent=(team.pts||0)+' PTS'; popScore(); }
+    renderChallenges(teamId, team);
+  });
+  UNSUBS.push(u);
+}
+
+function subscribeRounds() {
+  const u = onValue(ref(db,'rounds'), snap => {
+    if (!snap.exists()) return;
+    const data = snap.val();
+    ROUNDS.forEach(r => { r.unlocked = data[r.id]?.unlocked || false; });
+    // Re-render active view
+    if (ME) {
+      get(ref(db,`teams/${ME.teamId}`)).then(ts => {
+        if (ts.exists()) renderChallenges(ME.teamId, ts.val());
+      });
+    }
+    if (IS_ADMIN) { renderAdminRounds(); renderStats(); }
+  });
+  UNSUBS.push(u);
+}
+
+function subscribeAllTeams() {
+  const u = onValue(ref(db,'teams'), () => {
+    const pid = qs('#adm .page.on')?.id;
+    if (pid==='a-tm') renderTeams();
+    if (pid==='a-lb') renderAdminLB();
+    if (pid==='a-ov') renderStats();
+  });
+  UNSUBS.push(u);
+}
+
+// ═══════════════════════════════════════════
+//  TRANSFER
+// ═══════════════════════════════════════════
+async function openXfer() {
+  if (!ME) return;
+  const snap = await get(ref(db,`teams/${ME.teamId}/members`));
+  const members = snap.exists() ? Object.values(snap.val()) : [];
+  const others  = members.filter(m => m.toLowerCase()!==ME.memberName.toLowerCase());
+  const list = g('xfer-list'); if (!list) return;
+  list.innerHTML = others.length
+    ? others.map(m=>`<button class="xfer-btn" onclick="doXfer('${m}')"><span style="color:var(--cyan)">▹</span> ${m}</button>`).join('')
+    : `<div style="font-family:var(--mono);font-size:12px;color:var(--dim);padding:18px;text-align:center">No other members have joined yet.</div>`;
+  g('xfer-modal').style.display='flex';
+}
+window.openXfer = openXfer;
+
+function closeXfer() { g('xfer-modal').style.display='none'; }
+window.closeXfer = closeXfer;
+
+async function doXfer(newName) {
+  await update(ref(db,`teams/${ME.teamId}`), { leaderName:newName });
+  ME.isLeader = false; setRole(false); closeXfer();
+  saveSession();
+  toast(`Leadership transferred to ${newName}`,'warn');
+}
+window.doXfer = doXfer;
+
+// ═══════════════════════════════════════════
+//  CHALLENGES
+// ═══════════════════════════════════════════
+function renderChallenges(teamId, team) {
+  if (!ME) return;
+  const grid = g('ch-grid'); if (!grid) return;
+  const solved = team.solved || {};
+
+  grid.innerHTML = ROUNDS.map(r => {
+    // count solved subs for multi rounds
+    let isSolved;
+    if (r.multi) {
+      isSolved = r.subs.every(s => !!solved[s.id]);
+    } else {
+      isSolved = !!solved[r.id];
+    }
+
+    const cc = isSolved ? 'state-solved' : r.unlocked ? 'state-open' : 'state-locked';
+    const sc = isSolved ? 'sb-solved'    : r.unlocked ? 'sb-open'    : 'sb-locked';
+    const st = isSolved ? '✓ SOLVED'     : r.unlocked ? 'OPEN'       : 'LOCKED';
+
+    // solved count for multi
+    let solvedCount = '';
+    if (r.multi) {
+      const count = r.subs.filter(s => !!solved[s.id]).length;
+      solvedCount = `<div style="font-family:var(--mono);font-size:11px;color:var(--green);margin-top:4px">${count}/${r.subs.length} locations found</div>`;
+    }
+
+    const clickable = r.unlocked && !isSolved;
+    const cardClick = clickable ? `onclick="window.location.href='/rounds/${r.id}.html'"` : '';
+    const cursor    = clickable ? 'cursor:pointer' : '';
+
+    let foot = '';
+    if (r.unlocked && !isSolved) {
+      foot = `<div class="ch-foot">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <span style="font-family:var(--mono);font-size:11px;color:var(--cyan);letter-spacing:1px">▹ OPEN CHALLENGE</span>
+          <span style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">${r.multi ? r.subs.length+' questions' : '1 flag'}</span>
+        </div>
+        ${solvedCount}
+      </div>`;
+    } else if (isSolved) {
+      foot = `<div class="ch-foot"><div class="solved-row"><div class="solved-icon">✓</div>CHALLENGE COMPLETE</div></div>`;
+    } else {
+      foot = `<div class="ch-foot"><div class="locked-row">🔒 Waiting for admin to unlock this round</div></div>`;
+    }
+
+    return `<div class="ch-card ${cc}" ${cardClick} style="${cursor}">
+      <div class="ch-head">
+        <div><div class="ch-round">ROUND ${r.num}</div><span class="ch-tag ${r.tc}">${r.tag}</span></div>
+        <span class="ch-sbadge ${sc}">${st}</span>
+      </div>
+      <div class="ch-body">
+        <div class="ch-title">${r.title}</div>
+        <div class="ch-desc">${r.desc}</div>
+        <div class="ch-pts">${r.pts}<span>PTS</span></div>
+      </div>
+      ${foot}
+    </div>`;
+  }).join('');
+}
+
+// useHint and submitFlag moved to round.js
+async function useHint(rid) {
+  if (!ME?.isLeader) { toast('Only the leader can use hints.','bad'); return; }
+  const snap = await get(ref(db,`teams/${ME.teamId}`));
+  const team = snap.val();
+  if (team.hints_used?.[rid]) return;
+  if ((team.pts||0) < 10) { toast('Not enough points to use a hint (need 10 pts).','bad'); return; }
+  const r = ROUNDS.find(r=>r.id===rid);
+  await update(ref(db,`teams/${ME.teamId}`), {
+    [`hints_used/${rid}`]: true,
+    pts: (team.pts||0)-10
+  });
+  const hb = g('hb-'+rid);
+  if (hb) { hb.innerHTML=`💡 ${r.hint}<br><span style="font-size:11px;color:var(--red);display:block;margin-top:4px">— 10 pts deducted</span>`; hb.classList.add('on'); }
+  toast('Hint revealed — 10 pts deducted','warn');
+}
+window.useHint = useHint;
+
+async function submitFlag(rid) {
+  if (!ME?.isLeader) { toast('Only the leader can submit.','bad'); return; }
+  const inp = g('fi-'+rid); if (!inp) return;
+  const val = inp.value.trim();
+  const r   = ROUNDS.find(r=>r.id===rid);
+  if (!val) { toast('Enter a flag first.','info'); return; }
+
+  const snap = await get(ref(db,`teams/${ME.teamId}`));
+  const team = snap.val();
+  if (team.solved?.[rid]) { toast('Already solved!','info'); return; }
+
+  if (val === r.flag) {
+    const rSnap = await get(ref(db,`rounds/${rid}/solveCount`));
+    const sc    = rSnap.exists() ? rSnap.val() : 0;
+    const bonus  = sc===0?50:sc===1?25:sc===2?10:0;
+    const earned = r.pts + bonus;
+
+    await update(ref(db,`teams/${ME.teamId}`), {
+      [`solved/${rid}`]: true,
+      pts: (team.pts||0) + earned
+    });
+    await update(ref(db,`rounds/${rid}`), { solveCount: sc+1 });
+
+    showBanner(`✓ FLAG CAPTURED — ${r.title} +${earned} PTS`,'ok');
+    toast(`🎉 Correct! +${earned} pts${bonus?` (+${bonus} speed bonus)`:''}`, 'ok');
+    termLog(`Flag captured: ${r.title} (+${earned}pts)`,'ok');
+
+  } else {
+    const wCount = (team.wrongs?.[rid]||0)+1;
+    await update(ref(db,`teams/${ME.teamId}`), {
+      [`wrongs/${rid}`]: wCount,
+      pts: Math.max(0,(team.pts||0)-5)
+    });
+    inp.classList.remove('shake'); void inp.offsetWidth; inp.classList.add('shake');
+    showBanner(`✗ WRONG FLAG — ${r.title} —5 PTS`,'bad');
+    toast('Wrong flag — 5 pts deducted.','bad');
+    inp.value = '';
+  }
+}
+window.submitFlag = submitFlag;
+
+// ═══════════════════════════════════════════
+//  LEADERBOARD
+// ═══════════════════════════════════════════
+async function renderLB() {
+  const tbody = g('p-lbody'); if (!tbody) return;
+  tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;font-family:var(--mono);font-size:12px;color:var(--dim);padding:28px">Loading...</td></tr>`;
+  const snap = await get(ref(db,'teams'));
+  if (!snap.exists()) { tbody.innerHTML='<tr><td colspan="5" class="empty-st">No teams approved yet.</td></tr>'; return; }
+  const teams = [];
+  snap.forEach(c => { if(c.val().status==='approved') teams.push({id:c.key,...c.val()}); });
+  if (!teams.length) { tbody.innerHTML='<tr><td colspan="5" class="empty-st">No approved teams yet.</td></tr>'; return; }
+  teams.sort((a,b)=>(b.pts||0)-(a.pts||0));
+  tbody.innerHTML = teams.map((t,i) => {
+    const rank=i+1, rc=rank===1?'r1':rank===2?'r2':rank===3?'r3':'rn';
+    const isMe=ME&&t.id===ME.teamId;
+    const sc=Object.keys(t.solved||{}).length;
+    return `<tr class="${isMe?'me':''}">
+      <td class="rank-cell ${rc}">${rank}</td>
+      <td class="lb-name">${t.name}${isMe?'<span class="you-tag">YOU</span>':''}</td>
+      <td class="lb-pts">${t.pts||0}</td>
+      <td><div class="prog-wrap"><div class="prog-bar"><div class="prog-fill" style="width:${(sc/ROUNDS.length)*100}%"></div></div><span class="prog-frac">${sc}/${ROUNDS.length}</span></div></td>
+    </tr>`;
+  }).join('');
+}
+
+async function renderAdminLB() {
+  const tbody = g('a-lbody'); if (!tbody) return;
+  tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;font-family:var(--mono);font-size:12px;color:var(--dim);padding:28px">Loading...</td></tr>`;
+  const snap = await get(ref(db,'teams'));
+  if (!snap.exists()) { tbody.innerHTML=''; return; }
+  const teams=[];
+  snap.forEach(c=>{ if(c.val().status==='approved') teams.push({id:c.key,...c.val()}); });
+  teams.sort((a,b)=>(b.pts||0)-(a.pts||0));
+  tbody.innerHTML = teams.map((t,i)=>{
+    const rank=i+1, rc=rank===1?'r1':rank===2?'r2':rank===3?'r3':'rn';
+    const sc=Object.keys(t.solved||{}).length;
+    return `<tr>
+      <td class="rank-cell ${rc}">${rank}</td>
+      <td class="lb-name">${t.name}</td>
+      <td class="lb-pts">${t.pts||0}</td>
+      <td><div class="prog-wrap"><div class="prog-bar"><div class="prog-fill" style="width:${(sc/ROUNDS.length)*100}%"></div></div><span class="prog-frac">${sc}/${ROUNDS.length}</span></div></td>
+    </tr>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════
+//  ADMIN
+// ═══════════════════════════════════════════
+async function renderStats() {
+  const snap = await get(ref(db,'teams'));
+  let total=0,approved=0,pending=0;
+  if (snap.exists()) snap.forEach(c=>{ total++; if(c.val().status==='approved')approved++; if(c.val().status==='pending')pending++; });
+  const live=ROUNDS.filter(r=>r.unlocked).length;
+  if(g('s-tot')) g('s-tot').textContent=total;
+  if(g('s-ok'))  g('s-ok').textContent=approved;
+  if(g('s-pd'))  g('s-pd').textContent=pending;
+  if(g('s-lv'))  g('s-lv').textContent=live;
+}
+
+async function renderTeams() {
+  const pl=g('pend-list'),al=g('appr-list');
+  if(pl) pl.innerHTML='<div class="empty-st">Loading...</div>';
+  if(al) al.innerHTML='<div class="empty-st">Loading...</div>';
+  const snap = await get(ref(db,'teams'));
+  if (!snap.exists()) { if(pl)pl.innerHTML='<div class="empty-st">No teams yet.</div>'; if(al)al.innerHTML='<div class="empty-st">No teams yet.</div>'; return; }
+  const pend=[],appr=[];
+  snap.forEach(c=>{ const t={id:c.key,...c.val()}; if(t.status==='pending')pend.push(t); else if(t.status==='approved')appr.push(t); });
+  if(g('hd-pd')) g('hd-pd').textContent=pend.length;
+  if(g('hd-ok')) g('hd-ok').textContent=appr.length;
+
+  if(pl) pl.innerHTML = pend.length
+    ? pend.map(t=>`<div class="t-row">
+        <div class="t-row-info">
+          <div class="t-row-name">${t.name}</div>
+          <div class="t-row-meta">Leader: ${t.leaderName} · ${t.email}</div>
+        </div>
+        <div class="t-row-acts">
+          <button class="btn-ok"  onclick="approveTeam('${t.id}')">APPROVE</button>
+          <button class="btn-bad" onclick="rejectTeam('${t.id}')">REJECT</button>
+        </div>
+      </div>`).join('')
+    : '<div class="empty-st">No pending registrations.</div>';
+
+  if(al) al.innerHTML = appr.length
+    ? appr.map(t=>{
+        const mArr=Object.values(t.members||{});
+        const slots=[0,1,2].map(i=>{
+          const m=mArr[i], isL=m&&m.toLowerCase()===t.leaderName.toLowerCase();
+          return m?`<span style="color:${isL?'var(--amber)':'var(--green)'};font-size:11px">${isL?'★':''} ${m}</span>`
+                  :`<span style="color:var(--dim);font-size:11px">—</span>`;
+        });
+        const sc=Object.keys(t.solved||{}).length;
+        return `<div class="t-row" style="flex-direction:column;align-items:stretch;gap:6px">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div class="t-row-name">${t.name}</div>
+            <span style="font-family:var(--mono);font-size:12px;color:var(--cyan);letter-spacing:2px;background:var(--cyanglow);border:1px solid var(--cyanborder);padding:3px 9px;border-radius:3px">${t.code}</span>
+          </div>
+          <div class="t-row-meta">${t.pts||0} pts · ${sc}/${ROUNDS.length} solved</div>
+          <div style="display:flex;gap:14px">${slots.join('')}</div>
+        </div>`;
+      }).join('')
+    : '<div class="empty-st">No approved teams yet.</div>';
+
+  renderStats();
+}
+
+async function approveTeam(id) {
+  await update(ref(db,`teams/${id}`),{status:'approved'});
+  toast('Team approved.','ok'); renderTeams(); termLog('Team approved','ok');
+}
+window.approveTeam = approveTeam;
+
+async function rejectTeam(id) {
+  await update(ref(db,`teams/${id}`),{status:'rejected'});
+  toast('Team rejected.','bad'); renderTeams();
+}
+window.rejectTeam = rejectTeam;
+
+async function renderAdminRounds() {
+  const list=g('rd-list'); if(!list) return;
+  const snap=await get(ref(db,'rounds'));
+  const dbR=snap.exists()?snap.val():{};
+  ROUNDS.forEach(r=>{ r.unlocked=dbR[r.id]?.unlocked||false; });
+  list.innerHTML=ROUNDS.map(r=>`
+    <div class="round-row">
+      <div class="rr-info">
+        <div class="rr-name">Round ${r.num} — ${r.title}</div>
+        <div class="rr-meta">${r.tag} · ${r.pts} PTS</div>
+      </div>
+      <label class="tog">
+        <input type="checkbox" ${r.unlocked?'checked':''} onchange="toggleRound('${r.id}',this)">
+        <span class="tog-track"></span>
+      </label>
+    </div>`).join('');
+}
+
+async function toggleRound(id,cb) {
+  const r=ROUNDS.find(r=>r.id===id); if(!r) return;
+  r.unlocked=cb.checked;
+  await update(ref(db,`rounds/${id}`),{unlocked:cb.checked});
+  renderStats();
+  toast(`Round ${r.num} ${r.unlocked?'unlocked 🔓':'locked 🔒'}`,r.unlocked?'ok':'info');
+  termLog(`Round ${r.num} ${r.unlocked?'unlocked':'locked'}`,r.unlocked?'ok':'warn');
+}
+window.toggleRound = toggleRound;
+
+// ═══════════════════════════════════════════
+//  CANVAS
+// ═══════════════════════════════════════════
+(function(){
+  const c=g('cv'); if(!c) return;
+  const x=c.getContext('2d'); let W,H,dots=[];
+  function resize(){
+    W=c.width=innerWidth; H=c.height=innerHeight; dots=[];
+    for(let i=0;i<Math.floor(W*H/18000);i++)
+      dots.push({x:Math.random()*W,y:Math.random()*H,vx:(Math.random()-.5)*.25,vy:(Math.random()-.5)*.25,r:Math.random()*1.2+0.4,p:Math.random()*Math.PI*2});
+  }
+  function draw(){
+    x.clearRect(0,0,W,H);
+    x.strokeStyle='rgba(0,229,255,0.04)'; x.lineWidth=1;
+    for(let i=0;i<W;i+=56){x.beginPath();x.moveTo(i,0);x.lineTo(i,H);x.stroke();}
+    for(let j=0;j<H;j+=56){x.beginPath();x.moveTo(0,j);x.lineTo(W,j);x.stroke();}
+    for(let a=0;a<dots.length;a++) for(let b=a+1;b<dots.length;b++){
+      const dx=dots[a].x-dots[b].x,dy=dots[a].y-dots[b].y,d=Math.sqrt(dx*dx+dy*dy);
+      if(d<100){x.strokeStyle=`rgba(0,229,255,${(1-d/100)*0.12})`;x.lineWidth=.5;x.beginPath();x.moveTo(dots[a].x,dots[a].y);x.lineTo(dots[b].x,dots[b].y);x.stroke();}
+    }
+    dots.forEach(d=>{
+      d.p+=.018; const a=.18+Math.sin(d.p)*.1;
+      x.beginPath();x.arc(d.x,d.y,d.r,0,Math.PI*2);x.fillStyle=`rgba(0,229,255,${a})`;x.fill();
+      d.x+=d.vx;d.y+=d.vy; if(d.x<0||d.x>W)d.vx*=-1; if(d.y<0||d.y>H)d.vy*=-1;
+    });
+    requestAnimationFrame(draw);
+  }
+  window.addEventListener('resize',resize); resize(); draw();
+})();
+
+// ═══════════════════════════════════════════
+//  BOOT
+// ═══════════════════════════════════════════
+(function(){
+  const lines=[
+    {t:'> INITIALIZING CYBER GRID v3.0 ...',  c:'',  d:150},
+    {t:'> CONNECTING TO FIREBASE ........... OK', c:'g', d:380},
+    {t:'> LOADING CHALLENGE MODULES ........ OK', c:'g', d:580},
+    {t:'> SYNCING DATABASE ................. OK', c:'g', d:780},
+    {t:'> SECURE CHANNEL ESTABLISHED ....... OK', c:'g', d:960},
+    {t:'',                                        c:'d', d:1080},
+    {t:'> ALL SYSTEMS NOMINAL. GOOD LUCK.', c:'a', d:1220},
+  ];
+  const cont=g('blines'),bar=g('bbar');
+  if(!cont||!bar){ restoreSession().then(r=>{ if(!r) show('auth'); }); return; }
+  lines.forEach((l,i)=>setTimeout(()=>{
+    const el=document.createElement('div');
+    el.className='boot-line'+(l.c?' '+l.c:''); el.textContent=l.t;
+    cont.appendChild(el); setTimeout(()=>el.classList.add('v'),20);
+    bar.style.width=((i+1)/lines.length*100)+'%';
+  },l.d));
+  setTimeout(async()=>{ await seedRounds(); const restored = await restoreSession(); if(!restored) show('auth'); },2300);
+})();
+
+// ═══════════════════════════════════════════
+//  TERMINAL
+// ═══════════════════════════════════════════
+function termReveal(){
+  const t=g('terminal'); if(!t) return;
+  t.classList.add('on');
+  t.classList.remove('minimized','maximized');
+  g('term-toggle')?.classList.remove('on');
+  if(!g('term-body')?.children.length) termBoot();
+}
+function termHide(){
+  g('terminal')?.classList.remove('on','minimized','maximized');
+  g('term-toggle')?.classList.add('on');
+}
+function termShow(){
+  const t=g('terminal'); if(!t) return;
+  t.classList.add('on'); t.classList.remove('minimized');
+  if(!g('term-body')?.children.length) termBoot();
+  setTimeout(()=>g('term-input')?.focus(),100);
+}
+function termMin(){
+  const t=g('terminal'); if(!t) return;
+  if(t.classList.contains('minimized')){
+    t.classList.remove('minimized');
+    setTimeout(()=>g('term-input')?.focus(),100);
+  } else {
+    t.classList.remove('maximized');
+    t.classList.add('minimized');
+  }
+}
+function termMax(){
+  const t=g('terminal'); if(!t) return;
+  t.classList.remove('minimized');
+  if(t.classList.contains('maximized')){
+    t.classList.remove('maximized');
+  } else {
+    t.classList.add('maximized');
+  }
+}
+function tw(text,cls='',delay=0){
+  setTimeout(()=>{
+    const body=g('term-body'); if(!body) return;
+    const line=document.createElement('div'); line.className='tline';
+    line.innerHTML=cls==='cmd'?`<span class="tprompt">$</span><span class="tcmd"> ${text}</span>`:`<span class="tout ${cls}">${text}</span>`;
+    body.appendChild(line); body.scrollTop=body.scrollHeight;
+  },delay);
+}
+function termLog(text,cls='ok'){ if(!g('terminal')?.classList.contains('on')) return; tw(`[EVENT] ${text}`,cls); }
+function termBoot(){
+  tw('','d'); tw('CYBER GRID CTF — Live Terminal','ok',80);
+  tw('Type <span style="color:var(--cyan)">help</span> for commands.','d',160);
+}
+const CMDS={
+  help(){ [['status','event overview'],['teams','list approved teams'],['rounds','round status'],['top','leaderboard'],['clear','clear terminal']].forEach(([c,d],i)=>tw(`  <span style="color:var(--cyan)">${c}</span> — ${d}`,'d',i*45)); },
+  async status(){
+    const snap=await get(ref(db,'teams')); let a=0,p=0,tot=0;
+    if(snap.exists())snap.forEach(c=>{tot++;if(c.val().status==='approved')a++;if(c.val().status==='pending')p++;});
+    const live=ROUNDS.filter(r=>r.unlocked).length;
+    tw('[STATUS]','ok'); tw(`Teams online: ${a} / ${tot}`,'d',60); tw(`Pending approval: ${p}`,'d',120); tw(`Rounds live: ${live}/${ROUNDS.length}`,'d',180);
+  },
+  async teams(){
+    const snap=await get(ref(db,'teams')); if(!snap.exists()){tw('No teams.','w');return;}
+    tw('[TEAMS]','ok'); let i=0;
+    snap.forEach(c=>{ const t=c.val(); if(t.status==='approved') tw(`#${++i} ${t.name} — ${t.pts||0} pts`,'d',i*55); });
+  },
+  async top(){
+    const snap=await get(ref(db,'teams')); if(!snap.exists()){tw('No data.','w');return;}
+    const teams=[]; snap.forEach(c=>{ if(c.val().status==='approved')teams.push(c.val()); });
+    teams.sort((a,b)=>(b.pts||0)-(a.pts||0));
+    tw('[LEADERBOARD]','ok');
+    teams.forEach((t,i)=>{ const m=i===0?'🥇':i===1?'🥈':i===2?'🥉':'  '; tw(`${m} #${i+1} ${t.name} — ${t.pts||0} pts`,'d',i*55); });
+  },
+  rounds(){ tw('[ROUNDS]','ok'); ROUNDS.forEach((r,i)=>{ const st=r.unlocked?'<span style="color:var(--green)">LIVE</span>':'<span style="color:var(--red)">LOCKED</span>'; tw(`R${r.num} ${st} ${r.title} (${r.pts}pts)`,'d',i*65); }); },
+  clear(){ const b=g('term-body'); if(b)b.innerHTML=''; },
+};
+function termKey(e){
+  const inp=g('term-input'); if(!inp) return;
+  if(e.key==='Enter'){
+    const val=inp.value.trim(); if(!val) return;
+    const body=g('term-body');
+    if(body){const l=document.createElement('div');l.className='tline';l.innerHTML=`<span class="tprompt">$</span><span class="tcmd"> ${val}</span>`;body.appendChild(l);body.scrollTop=body.scrollHeight;}
+    TERM_HIST.unshift(val); TERM_HIST_IDX=-1;
+    const cmd=val.toLowerCase().split(' ')[0];
+    if(CMDS[cmd])CMDS[cmd](); else tw(`command not found: ${val}. Type <span style="color:var(--cyan)">help</span>`,'e',80);
+    inp.value='';
+  } else if(e.key==='ArrowUp'){e.preventDefault();if(TERM_HIST_IDX<TERM_HIST.length-1){TERM_HIST_IDX++;inp.value=TERM_HIST[TERM_HIST_IDX];}}
+    else if(e.key==='ArrowDown'){e.preventDefault();if(TERM_HIST_IDX>0){TERM_HIST_IDX--;inp.value=TERM_HIST[TERM_HIST_IDX];}else{TERM_HIST_IDX=-1;inp.value='';}}
+}
+
+// Draggable terminal
+(function(){
+  const el=g('terminal'),bar=g('term-bar'); if(!el||!bar) return;
+  let drag=false,ox=0,oy=0,sx=0,sy=0;
+  bar.addEventListener('mousedown',e=>{ if(e.target.classList.contains('tdot'))return; drag=true; const r=el.getBoundingClientRect(); ox=r.left;oy=r.top;sx=e.clientX;sy=e.clientY; el.style.transition='none'; document.body.style.userSelect='none'; });
+  document.addEventListener('mousemove',e=>{ if(!drag)return; el.style.left=Math.max(0,Math.min(innerWidth-el.offsetWidth,ox+(e.clientX-sx)))+'px'; el.style.top=Math.max(0,Math.min(innerHeight-el.offsetHeight,oy+(e.clientY-sy)))+'px'; el.style.bottom='auto'; });
+  document.addEventListener('mouseup',()=>{ drag=false; document.body.style.userSelect=''; el.style.transition=''; });
+})();
+
+// Enter key on auth
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Enter') return;
+  const scr=qs('.scr.on'); if(!scr) return;
+  if(scr.id==='auth'){
+    const t=qs('.tab.on')?.textContent.trim();
+    if(t==='JOIN TEAM')doJoin(); else if(t==='REGISTER')doReg(); else doAdm();
+  }
+});
+
+// Expose terminal functions
+window.termShow=termShow; window.termHide=termHide; window.termMin=termMin; window.termMax=termMax; window.termKey=termKey;
+
+// ═══════════════════════════════════════════
+//  SESSION PERSISTENCE
+// ═══════════════════════════════════════════
+
+function saveSession() {
+  if (IS_ADMIN) {
+    localStorage.setItem('cg_session', JSON.stringify({ type:'admin' }));
+  } else if (ME) {
+    localStorage.setItem('cg_session', JSON.stringify({
+      type:'member', teamId:ME.teamId,
+      memberName:ME.memberName, isLeader:ME.isLeader
+    }));
+  } else {
+    localStorage.removeItem('cg_session');
+  }
+}
+
+async function restoreSession() {
+  const raw = localStorage.getItem('cg_session');
+  if (!raw) return false;
+  try {
+    const session = JSON.parse(raw);
+
+    if (session.type === 'admin') {
+      IS_ADMIN = true;
+      subscribeAllTeams(); subscribeRounds(); renderStats();
+      show('adm'); termReveal(); return true;
+    }
+
+    if (session.type === 'member') {
+      const snap = await get(ref(db, `teams/${session.teamId}`));
+      if (!snap.exists()) { localStorage.removeItem('cg_session'); return false; }
+      const team = snap.val();
+      if (team.status === 'rejected') { localStorage.removeItem('cg_session'); return false; }
+      if (team.status === 'pending')  { show('pending'); return true; }
+
+      const isLeader = session.memberName.toLowerCase() === team.leaderName.toLowerCase();
+      ME = { teamId:session.teamId, memberName:session.memberName, isLeader };
+
+      g('p-tname').textContent = team.name;
+      g('p-score').textContent = (team.pts||0)+' PTS';
+      setRole(isLeader);
+      subscribeTeam(session.teamId);
+      subscribeRounds();
+      show('part'); termReveal(); return true;
+    }
+  } catch(err) {
+    console.error('Session restore failed:', err);
+    localStorage.removeItem('cg_session');
+  }
+  return false;
+}

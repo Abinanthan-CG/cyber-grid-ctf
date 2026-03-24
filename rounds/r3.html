@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Round 3 — METADATA HUNT | CYBER GRID</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+<style>
+/* Round page specific */
+.round-page { flex:1;padding:28px;max-width:860px;width:100%;margin:0 auto }
+.round-page-header {
+  background:var(--bg1);border:1px solid var(--cyanborder);border-radius:6px;
+  padding:24px 28px;margin-bottom:28px;position:relative;overflow:hidden;
+}
+.round-page-header::before {
+  content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,transparent,var(--cyan),transparent);opacity:0.6;
+}
+.round-back {
+  display:inline-flex;align-items:center;gap:7px;
+  font-family:var(--mono);font-size:11px;color:var(--dim);
+  text-decoration:none;letter-spacing:1px;
+  margin-bottom:20px;transition:color 0.15s;
+}
+.round-back:hover { color:var(--cyan); }
+.round-content-box {
+  background:var(--bg1);border:1px solid var(--cyanborder);
+  border-radius:6px;padding:28px;
+}
+</style>
+</head>
+<body>
+
+<!-- Toasts container -->
+<div id="toasts" style="position:fixed;bottom:22px;right:22px;z-index:9999;display:flex;flex-direction:column;gap:8px;align-items:flex-end"></div>
+
+<!-- Topbar -->
+<nav class="topbar">
+  <a href="/" style="text-decoration:none">
+    <div class="tbar-logo">CYBER<span> GRID</span></div>
+  </a>
+  <div style="flex:1"></div>
+  <div class="tbar-right">
+    <div id="role-badge" class="score-tag role-member" style="font-size:11px;padding:4px 11px;letter-spacing:2px">MEMBER</div>
+    <div class="score-tag" id="page-score">0 PTS</div>
+    <a href="/" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;padding:7px 16px;background:var(--bg2);border:1px solid var(--cyanborder);border-radius:4px;font-family:var(--mono);font-size:11px;color:var(--cyan);letter-spacing:1px;transition:all 0.15s" onmouseover="this.style.borderColor='var(--cyanhi)';this.style.background='var(--bg3)'" onmouseout="this.style.borderColor='var(--cyanborder)';this.style.background='var(--bg2)'">← CHALLENGES</a>
+  </div>
+</nav>
+
+<!-- Main -->
+
+<!-- Back button -->
+<div style="padding:14px 28px 0;max-width:860px;width:100%;margin:0 auto">
+  <a href="/" style="display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;color:var(--cyan);text-decoration:none;letter-spacing:1px;padding:7px 14px;background:var(--bg2);border:1px solid var(--cyanborder);border-radius:4px;transition:all 0.15s" onmouseover="this.style.borderColor='var(--cyanhi)';this.style.background='var(--bg3)'" onmouseout="this.style.borderColor='var(--cyanborder)';this.style.background='var(--bg2)'">
+    ← BACK TO CHALLENGES
+  </a>
+</div>
+
+<div class="round-page">
+
+  <!-- Round header -->
+  <div class="round-page-header">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">
+      <div>
+        <div id="round-num" style="font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:3px;margin-bottom:6px">ROUND 3</div>
+        <div id="round-title" style="font-family:var(--display);font-size:24px;font-weight:900;color:var(--hi);letter-spacing:3px;margin-bottom:10px">METADATA HUNT</div>
+        <div id="round-desc" style="font-size:14px;color:var(--muted);line-height:1.7;max-width:560px"></div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex-shrink:0">
+        <span id="round-tag" class="ch-tag tt-forensics">FORENSICS</span>
+        <div id="round-pts" style="font-family:var(--display);font-size:28px;font-weight:900;color:var(--amber);text-shadow:0 0 14px rgba(255,193,7,0.4)"></div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:2px">POINTS</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Challenge content (injected by round.js) -->
+  <div class="round-content-box">
+    <div id="round-content">
+      <div style="text-align:center;padding:40px;font-family:var(--mono);font-size:12px;color:var(--dim)">Loading challenge...</div>
+    </div>
+  </div>
+
+</div>
+
+<script type="module" src="/js/round.js"></script>
+</body>
+</html>

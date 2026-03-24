@@ -1,0 +1,10 @@
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+  force = false
+
+[[redirects]]
+  from = "/rounds/*"
+  to = "/rounds/:splat"
+  status = 200
