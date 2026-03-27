@@ -37,7 +37,7 @@ export const ROUNDS = [
     flag:'flag{r0b0ts_4r3_w4tch1ng}',
     hint:'Check everything — page source, special paths, and response headers. The flag appears in more than one place.',
     desc:'A target company website has been deployed. The flag is hidden somewhere on the site — it could be in the page source, a special file crawlers use, or in the HTTP response headers. Inspect carefully.',
-    url: 'https://cyber-grid-target.netlify.app'
+    url: 'https://cyber-grid-target.vercel.app/'
   },
   { id:'r6', num:6, title:'BINARY STRINGS', tag:'REVERSING', tc:'tt-rev',      pts:100,
     flag:'flag{h3x_dump_h3r0}',
