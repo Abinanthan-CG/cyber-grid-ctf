@@ -221,37 +221,6 @@ const app = initializeApp(firebaseConfig);
 const db  = getDatabase(app);
 
 // ── ROUND DEFINITIONS (never stored in Firebase, always local) ──
-const ROUNDS = [
-  { id:'r1', num:1, title:'GEOLOCATION',    tag:'OSINT',     tc:'tt-osint',    pts:100,
-    flag:'flag{chennai_marina_beach}',
-    hint:'Focus on the language on signboards and look for the distinctive lighthouse in the background.',
-    desc:'A photograph was taken somewhere in South India. Identify the exact location using visual clues — signboards, architecture, vegetation, and landmarks.' },
-
-  { id:'r2', num:2, title:'STEGANOGRAPHY',  tag:'STEGO',     tc:'tt-stego',    pts:150,
-    flag:'flag{h1dd3n_m3ss4g3}',
-    hint:'Try LSB steganography tools. The hidden payload is in the red channel. Password: cybergrid',
-    desc:'A seemingly ordinary PNG image has been provided. Something is hidden inside. Use steganography tools to extract the concealed payload.' },
-
-  { id:'r3', num:3, title:'METADATA HUNT',  tag:'FORENSICS', tc:'tt-forensics', pts:150,
-    flag:'flag{exif_gps_13.0827_80.2707}',
-    hint:'Use exiftool or an online EXIF viewer. Check the GPS coordinates in the metadata.',
-    desc:'This image file carries more than just pixels. Extract coordinates from its embedded metadata to find the flag.' },
-
-  { id:'r4', num:4, title:'CIPHER DECODE',  tag:'CRYPTO',    tc:'tt-crypto',   pts:100,
-    flag:'flag{caesar_cipher_solved}',
-    hint:'The string is Base64 encoded. Try CyberChef with the "From Base64" recipe.',
-    desc:'An encoded string was intercepted: <code style="font-family:var(--mono);color:#79c0ff;font-size:12px">ZmxhZ3tjYWVzYXJfY2lwaGVyX3NvbHZlZH0=</code> — decode it to reveal the flag.' },
-
-  { id:'r5', num:5, title:'WEB RECON',      tag:'WEB',       tc:'tt-web',      pts:200,
-    flag:'flag{r0b0ts_txt_s3cr3t}',
-    hint:'Try visiting /robots.txt on the target URL. Admins often hide sensitive paths there.',
-    desc:'A target website has been deployed with a secret flag hidden somewhere. Inspect the source code, check special paths, and look through the response headers.' },
-
-  { id:'r6', num:6, title:'BINARY STRINGS', tag:'REVERSING', tc:'tt-rev',      pts:250,
-    flag:'flag{str1ngs_t00l_m4st3r}',
-    hint:'Run: strings file.bin | grep flag — the flag is embedded as plain ASCII inside the binary.',
-    desc:'A binary executable file has been provided. You do not need to run it — find the flag embedded as plain text somewhere inside the file.' },
-];
 
 const ADMIN_PASS  = 'dlss2026slop';
 const TOTAL_PTS   = ROUNDS.reduce((a,r) => a+r.pts, 0);
