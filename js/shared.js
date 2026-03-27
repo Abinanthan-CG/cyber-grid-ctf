@@ -8,7 +8,7 @@ export const ROUNDS = [
       { id:'r1a', pts:25, flag:'flag{chernobyl}',   label:'Location 1', img:'https://drive.google.com/thumbnail?id=13uPSkA-7gOPkEIUbDlclmYUCrTYDD3CW&sz=w1200' },
       { id:'r1b', pts:25, flag:'flag{venice}',   label:'Location 2', img:'https://drive.google.com/thumbnail?id=1M_wlI_J1sdrf2GUtkq7nXo6Bqbz5Uteh&sz=w1200' },
       { id:'r1c', pts:25, flag:'flag{cyprus}',   label:'Location 3', img:'https://drive.google.com/thumbnail?id=1ubZc015wkHBgA9Tvfd3orVdKY92hj88n&sz=w1200' },
-      { id:'r1d', pts:25, flag:'flag{las_vegas}',   label:'Location 4', img:'https://drive.google.com/thumbnail?id=1rxViJ0nBdEdDo6MHLbrHV-8_TMe7NMaY&sz=w1200' },
+      { id:'r1d', pts:25, flag:'flag{las vegas}',   label:'Location 4', img:'https://drive.google.com/thumbnail?id=1rxViJ0nBdEdDo6MHLbrHV-8_TMe7NMaY&sz=w1200' },
     ]
   },
   { id:'r2', num:2, title:'STEGANOGRAPHY',  tag:'STEGO',     tc:'tt-stego',    pts:100,
